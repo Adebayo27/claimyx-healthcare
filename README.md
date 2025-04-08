@@ -41,27 +41,10 @@ npm install
 # or
 yarn install
 ```
-
-3. Create a `components.json` file in the root directory with the following content:
+3. Install the `shadcn/ui` package:
 
 ```
-{
-  "$schema": "https://ui.shadcn.com/schema.json",
-  "style": "default",
-  "rsc": true,
-  "tsx": true,
-  "tailwind": {
-    "config": "tailwind.config.ts",
-    "css": "app/globals.css",
-    "baseColor": "slate",
-    "cssVariables": true
-  },
-  "aliases": {
-    "components": "@/components",
-    "utils": "@/lib/utils"
-  },
-  "packageManager": "npm"
-}
+npx shadcn@latest add button card table badge input dropdown-menu slider label progress skeleton tooltip
 ```
 
 4. Start the development server:
