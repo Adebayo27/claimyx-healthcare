@@ -29,22 +29,22 @@ A comprehensive healthcare billing dashboard with revenue forecasting using Mont
 
 1. Clone the repository:
 
-\`\`\`bash
+```
 git clone https://github.com/Adebayo27/claimyx-healthcare.git
 cd claimyx-healthcare
-\`\`\`
+```
 
 2. Install dependencies:
 
-\`\`\`bash
+```
 npm install
 # or
 yarn install
-\`\`\`
+```
 
 3. Create a `components.json` file in the root directory with the following content:
 
-\`\`\`json
+```
 {
   "$schema": "https://ui.shadcn.com/schema.json",
   "style": "default",
@@ -62,15 +62,15 @@ yarn install
   },
   "packageManager": "npm"
 }
-\`\`\`
+```
 
 4. Start the development server:
 
-\`\`\`bash
+```
 npm run dev
 # or
 yarn dev
-\`\`\`
+```
 
 5. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
@@ -130,9 +130,9 @@ The revenue forecasting tool uses Monte Carlo simulation to predict possible rev
 
 If you encounter dependency conflicts with `date-fns`, ensure you're using version 2.x:
 
-\`\`\`bash
+```
 npm install date-fns@^2.30.0
-\`\`\`
+```
 
 ### Package Manager Errors
 
