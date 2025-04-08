@@ -1,0 +1,297 @@
+"use client"
+
+import { useState, useEffect, useRef } from "react"
+import { fetchClaims } from "@/lib/actions"
+import type { Claim } from "@/lib/data"
+import { type PaymentProbabilities, type SimulationResult, runMonteCarloSimulationInChunks } from "@/lib/monte-carlo"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Slider } from "@/components/ui/slider"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
+import { RevenueDistributionChart } from "@/components/revenue-distribution-chart"
+
+export function RevenueForecasting() {
+  const [claims, setClaims] = useState<Claim[]>([])
+  const [probabilities, setProbabilities] = useState<PaymentProbabilities>({
+    Pending: 0.7,
+    Approved: 0.99,
+    Denied: 0.1,
+  })
+  const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null)
+  const [isSimulating, setIsSimulating] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [loading, setLoading] = useState(true)
+
+  // Use a ref to track if we need to auto-run simulation when claims load
+  const initialSimulationRun = useRef(false)
+
+  useEffect(() => {
+    const loadClaims = async () => {
+      try {
+        const data = await fetchClaims()
+        setClaims(data)
+        setLoading(false)
+      } catch (error) {
+        console.error("Failed to fetch claims:", error)
+        setLoading(false)
+      }
+    }
+
+    loadClaims()
+  }, [])
+
+  // Run initial simulation when claims are loaded
+  useEffect(() => {
+    if (claims.length > 0 && !initialSimulationRun.current) {
+      initialSimulationRun.current = true
+      runSimulation()
+    }
+  }, [claims])
+
+  // Debounce probability changes to avoid too many simulations
+  useEffect(() => {
+    if (initialSimulationRun.current) {
+      const timer = setTimeout(() => {
+        runSimulation()
+      }, 300)
+
+      return () => clearTimeout(timer)
+    }
+  }, [probabilities])
+
+  const runSimulation = () => {
+    if (claims.length === 0 || isSimulating) return
+
+    setIsSimulating(true)
+    setProgress(0)
+
+    runMonteCarloSimulationInChunks(
+      claims,
+      probabilities,
+      2000,
+      200,
+      (progress) => {
+        setProgress(progress * 100)
+      },
+      (result) => {
+        setSimulationResult(result)
+        setIsSimulating(false)
+        setProgress(100)
+      },
+    )
+  }
+
+  const handleProbabilityChange = (status: keyof PaymentProbabilities, value: number[]) => {
+    setProbabilities((prev) => ({
+      ...prev,
+      [status]: value[0] / 100,
+    }))
+  }
+
+  if (loading) {
+    return <div>Loading claims data...</div>
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Revenue Forecasting</CardTitle>
+        <CardDescription>
+          Adjust payment probabilities to see how they affect projected revenue outcomes
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="pending-probability">Pending Claims Payment Probability</Label>
+              <span className="text-sm font-medium">{Math.round(probabilities.Pending * 100)}%</span>
+            </div>
+            <Slider
+              id="pending-probability"
+              min={0}
+              max={100}
+              step={1}
+              value={[probabilities.Pending * 100]}
+              onValueChange={(value: number[]) => handleProbabilityChange("Pending", value)}
+              className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="approved-probability">Approved Claims Payment Probability</Label>
+              <span className="text-sm font-medium">{Math.round(probabilities.Approved * 100)}%</span>
+            </div>
+            <Slider
+              id="approved-probability"
+              min={0}
+              max={100}
+              step={1}
+              value={[probabilities.Approved * 100]}
+              onValueChange={(value: number[]) => handleProbabilityChange("Approved", value)}
+              className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="denied-probability">Denied Claims Payment Probability</Label>
+              <span className="text-sm font-medium">{Math.round(probabilities.Denied * 100)}%</span>
+            </div>
+            <Slider
+              id="denied-probability"
+              min={0}
+              max={100}
+              step={1}
+              value={[probabilities.Denied * 100]}
+              onValueChange={(value: number[]) => handleProbabilityChange("Denied", value)}
+              className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+            />
+          </div>
+
+          <Button onClick={runSimulation} disabled={isSimulating || claims.length === 0} className="w-full">
+            {isSimulating ? "Simulating..." : "Run Simulation"}
+          </Button>
+
+          {isSimulating && (
+            <div className="space-y-2">
+              <Progress value={progress} />
+              <p className="text-center text-sm text-muted-foreground">
+                Running Monte Carlo simulation ({Math.round(progress)}%)
+              </p>
+            </div>
+          )}
+        </div>
+
+        {simulationResult && (
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-3">
+              <Card>
+                <CardHeader className="p-4">
+                  <CardTitle className="text-sm font-medium">Expected Revenue</CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="text-2xl font-bold">
+                    $
+                    {simulationResult.expectedRevenue.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Average across all simulations</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="p-4">
+                  <CardTitle className="text-sm font-medium">Minimum Revenue</CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="text-2xl font-bold">
+                    $
+                    {simulationResult.minRevenue.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Worst case scenario</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="p-4">
+                  <CardTitle className="text-sm font-medium">Maximum Revenue</CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <div className="text-2xl font-bold">
+                    $
+                    {simulationResult.maxRevenue.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Best case scenario</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader className="p-4">
+                <CardTitle className="text-sm font-medium">Revenue Distribution</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <RevenueDistributionChart
+                  distribution={simulationResult.distribution}
+                  buckets={simulationResult.buckets}
+                  percentiles={simulationResult.percentiles}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="p-4">
+                <CardTitle className="text-sm font-medium">Percentile Analysis</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-sm">10th Percentile:</span>
+                    <span className="font-medium">
+                      $
+                      {simulationResult.percentiles.p10.toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm">25th Percentile:</span>
+                    <span className="font-medium">
+                      $
+                      {simulationResult.percentiles.p25.toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm">50th Percentile (Median):</span>
+                    <span className="font-medium">
+                      $
+                      {simulationResult.percentiles.p50.toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm">75th Percentile:</span>
+                    <span className="font-medium">
+                      $
+                      {simulationResult.percentiles.p75.toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm">90th Percentile:</span>
+                    <span className="font-medium">
+                      $
+                      {simulationResult.percentiles.p90.toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
