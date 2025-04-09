@@ -44,7 +44,7 @@ yarn install
 3. Install the `shadcn/ui` package:
 
 ```
-npx shadcn@latest add button card table badge input dropdown-menu slider label progress skeleton tooltip
+npx shadcn@latest add button card table badge input dropdown-menu slider label progress skeleton tooltip select pagination
 ```
 
 4. Start the development server:
