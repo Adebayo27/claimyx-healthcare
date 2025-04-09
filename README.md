@@ -24,6 +24,7 @@ A comprehensive healthcare billing dashboard with revenue forecasting using Mont
 
 - Node.js 18.17.0 or later
 - npm or yarn package manager
+- pnpm because of shadcn/ui
 
 ### Installation
 
@@ -44,6 +45,7 @@ yarn install
 3. Install the `shadcn/ui` package:
 
 ```
+npm install -g pnpm // Install pnpm globally
 npx shadcn@latest add button card table badge input dropdown-menu slider label progress skeleton tooltip select pagination
 ```
 
