@@ -49,7 +49,7 @@ export async function DashboardSummary() {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{summary.statusCounts.Pending}</div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-md">
             $
             {summary.statusAmounts.Pending.toLocaleString("en-US", {
               minimumFractionDigits: 2,
@@ -78,7 +78,7 @@ export async function DashboardSummary() {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{summary.statusCounts.Approved}</div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-md">
             $
             {summary.statusAmounts.Approved.toLocaleString("en-US", {
               minimumFractionDigits: 2,
@@ -107,7 +107,7 @@ export async function DashboardSummary() {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{summary.statusCounts.Denied}</div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-md">
             $
             {summary.statusAmounts.Denied.toLocaleString("en-US", {
               minimumFractionDigits: 2,

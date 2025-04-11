@@ -16,7 +16,7 @@ export default function Dashboard() {
             <DashboardSummary />
           </Suspense>
 
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-6 lg:grid-cols-1">
             <div className="col-span-1 space-y-6">
               <h2 className="text-2xl font-semibold">Claims Management</h2>
               <Suspense fallback={<Skeleton className="h-[400px] w-full" />}>

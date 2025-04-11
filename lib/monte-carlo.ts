@@ -1,29 +1,62 @@
-"use client"
+import type { Claim, PaymentProbabilities, SimulationResult } from "./monte-carlo.types"
 
-import type { Claim } from "@/lib/data"
+// Re-export types
+export type { Claim, PaymentProbabilities, SimulationResult }
 
-export type PaymentProbabilities = {
-  Pending: number
-  Approved: number
-  Denied: number
-}
+// Function to create and use a Web Worker for Monte Carlo simulation
+export function runMonteCarloSimulationWithWorker(
+  claims: Claim[],
+  probabilities: PaymentProbabilities,
+  iterations = 2000,
+  onProgress?: (progress: number) => void,
+  onComplete?: (result: SimulationResult) => void,
+): { cancel: () => void } {
+  // Create a new worker
+  const workerCode = `
+    ${runMonteCarloSimulation.toString()}
+    
+    self.onmessage = (event) => {
+      const { claims, probabilities, iterations } = event.data;
+      
+      // Run the simulation
+      const results = runMonteCarloSimulation(claims, probabilities, iterations);
+      
+      // Send the results back to the main thread
+      self.postMessage({ type: "complete", results });
+    };
+  `
 
-export type SimulationResult = {
-  expectedRevenue: number
-  minRevenue: number
-  maxRevenue: number
-  percentiles: {
-    p10: number
-    p25: number
-    p50: number
-    p75: number
-    p90: number
+  const blob = new Blob([workerCode], { type: "application/javascript" })
+  const workerUrl = URL.createObjectURL(blob)
+  const worker = new Worker(workerUrl)
+
+  // Set up message handling
+  worker.onmessage = (event) => {
+    const { type, results, progress } = event.data
+
+    if (type === "progress" && onProgress) {
+      onProgress(progress)
+    } else if (type === "complete" && onComplete) {
+      onComplete(results)
+      // Clean up
+      worker.terminate()
+      URL.revokeObjectURL(workerUrl)
+    }
   }
-  distribution: number[]
-  buckets: number[]
+
+  // Start the simulation
+  worker.postMessage({ claims, probabilities, iterations })
+
+  // Return a function to cancel the simulation
+  return {
+    cancel: () => {
+      worker.terminate()
+      URL.revokeObjectURL(workerUrl)
+    },
+  }
 }
 
-// Function to run Monte Carlo simulation
+// Keep the original function for fallback or direct use
 export function runMonteCarloSimulation(
   claims: Claim[],
   probabilities: PaymentProbabilities,
@@ -38,9 +71,7 @@ export function runMonteCarloSimulation(
 
     // For each claim, determine if it gets paid based on status and probability
     for (const claim of claims) {
-      // Use its payment_status to get the chance it'll be paid.
       const probability = probabilities[claim.payment_status]
-      // Randomly determine if it's paid or not.
       const isPaid = Math.random() < probability
 
       if (isPaid) {
@@ -99,7 +130,7 @@ export function runMonteCarloSimulation(
   }
 }
 
-// Function to run simulation in chunks to keep UI responsive
+// Function to run simulation in chunks to keep UI responsive (legacy approach)
 export function runMonteCarloSimulationInChunks(
   claims: Claim[],
   probabilities: PaymentProbabilities,
@@ -146,18 +177,14 @@ export function runMonteCarloSimulationInChunks(
       const minRevenue = results[0]
       const maxRevenue = results[results.length - 1]
 
-      // Pick revenue values at various percentiles:
       const p10 = results[Math.floor(iterations * 0.1)]
       const p25 = results[Math.floor(iterations * 0.25)]
       const p50 = results[Math.floor(iterations * 0.5)]
       const p75 = results[Math.floor(iterations * 0.75)]
       const p90 = results[Math.floor(iterations * 0.9)]
 
-      // Create Histogram Distribution
       const numBuckets = 20
       const bucketSize = (maxRevenue - minRevenue) / numBuckets
-
-      // Divide the range of revenue into 20 equal parts (buckets) to build a histogram
       const buckets = Array(numBuckets)
         .fill(0)
         .map((_, i) => minRevenue + i * bucketSize)

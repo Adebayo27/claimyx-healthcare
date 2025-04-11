@@ -339,10 +339,10 @@ export function ClaimsTable() {
                         </div>
                       </TableHead>
                       <TableHead
-                        className="cursor-pointer text-right"
+                        className="cursor-pointer"
                         onClick={() => handleSort("amount")}
                       >
-                        <div className="flex items-center justify-end">
+                        <div className="flex items-center">
                           Amount {getSortIcon("amount")}
                         </div>
                       </TableHead>
@@ -387,7 +387,7 @@ export function ClaimsTable() {
                           </TableCell>
                           <TableCell>{claim.patient_name}</TableCell>
                           <TableCell>{claim.billing_code}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell>
                             $
                             {claim.amount.toLocaleString("en-US", {
                               minimumFractionDigits: 2,
@@ -411,13 +411,13 @@ export function ClaimsTable() {
           </div>
 
           <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
-            <div className="text-sm text-muted-foreground">
+            <div className="w-full text-sm text-muted-foreground">
               Showing {indexOfFirstItem + 1}-
               {Math.min(indexOfLastItem, filteredClaims.length)} of{" "}
               {filteredClaims.length} claims
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="w-full flex items-center space-x-2">
               <span className="text-sm text-muted-foreground">
                 Rows per page
               </span>
