@@ -25,7 +25,6 @@ export function StatusDistributionChart({ pending, approved, denied }: StatusDis
   const customTooltip = ({ active, payload }: TooltipProps<ValueType, NameType>) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload
-      console.log(data)
       return (
         <div className="bg-background p-2 border rounded-md shadow-sm">
           <p className="font-medium">{`${data.name}: ${data.value} claims`}</p>
