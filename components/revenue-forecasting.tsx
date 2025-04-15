@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { RevenueDistributionChart } from "@/components/revenue-distribution-chart"
+import { Loader2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 export function RevenueForecasting() {
   const [claims, setClaims] = useState<Claim[]>([])
@@ -21,6 +23,7 @@ export function RevenueForecasting() {
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [displayProgress, setDisplayProgress] = useState(0) // For smooth animation
   const [loading, setLoading] = useState(true)
   const [workerSupported, setWorkerSupported] = useState(true)
 
@@ -28,6 +31,8 @@ export function RevenueForecasting() {
   const initialSimulationRun = useRef(false)
   // Use a ref to store the current simulation cancellation function
   const currentSimulation = useRef<{ cancel: () => void } | null>(null)
+  // Use a ref for animation frame
+  const animationFrameRef = useRef<number | null>(null)
 
   useEffect(() => {
     // Check if Web Workers are supported
@@ -54,6 +59,9 @@ export function RevenueForecasting() {
       if (currentSimulation.current) {
         currentSimulation.current.cancel()
       }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
     }
   }, [])
 
@@ -76,6 +84,33 @@ export function RevenueForecasting() {
     }
   }, [probabilities])
 
+  // Smooth progress animation
+  useEffect(() => {
+    if (isSimulating) {
+      const animateProgress = () => {
+        setDisplayProgress((prev) => {
+          // Smoothly animate towards the actual progress
+          const diff = progress - prev
+          // If we're close enough, just set to the target value
+          if (Math.abs(diff) < 0.5) return progress
+          // Otherwise, move a percentage of the way there
+          return prev + diff * 0.1
+        })
+        animationFrameRef.current = requestAnimationFrame(animateProgress)
+      }
+      animationFrameRef.current = requestAnimationFrame(animateProgress)
+
+      return () => {
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current)
+        }
+      }
+    } else {
+      // When simulation stops, ensure display progress matches actual progress
+      setDisplayProgress(progress)
+    }
+  }, [isSimulating, progress])
+
   const runSimulation = () => {
     if (claims.length === 0 || isSimulating) return
 
@@ -86,6 +121,7 @@ export function RevenueForecasting() {
 
     setIsSimulating(true)
     setProgress(0)
+    setDisplayProgress(0)
 
     // Use Web Worker for simulation
     currentSimulation.current = runMonteCarloSimulationWithWorker(
@@ -97,9 +133,12 @@ export function RevenueForecasting() {
       },
       (result) => {
         setSimulationResult(result)
-        setIsSimulating(false)
         setProgress(100)
-        currentSimulation.current = null
+        // Let the animation finish smoothly before ending simulation state: to make it faster we can reduce the setTimeout time to 300
+        setTimeout(() => {
+          setIsSimulating(false)
+          currentSimulation.current = null
+        }, 500)
       },
     )
   }
@@ -145,6 +184,7 @@ export function RevenueForecasting() {
                 value={[probabilities.Pending * 100]}
                 onValueChange={(value) => handleProbabilityChange("Pending", value)}
                 className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+                disabled={isSimulating}
               />
             </div>
 
@@ -161,6 +201,7 @@ export function RevenueForecasting() {
                 value={[probabilities.Approved * 100]}
                 onValueChange={(value) => handleProbabilityChange("Approved", value)}
                 className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+                disabled={isSimulating}
               />
             </div>
 
@@ -177,25 +218,45 @@ export function RevenueForecasting() {
                 value={[probabilities.Denied * 100]}
                 onValueChange={(value) => handleProbabilityChange("Denied", value)}
                 className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+                disabled={isSimulating}
               />
             </div>
 
-            <Button onClick={runSimulation} disabled={isSimulating || claims.length === 0} className="w-full">
-              {isSimulating ? "Simulating..." : "Run Simulation"}
+            <Button onClick={runSimulation} disabled={isSimulating || claims.length === 0} className="w-full relative">
+              {isSimulating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Simulating...
+                </>
+              ) : (
+                "Run Simulation"
+              )}
             </Button>
 
             {isSimulating && (
               <div className="space-y-2">
-                <Progress value={progress} />
-                <p className="text-center text-sm text-muted-foreground">
-                  Running Monte Carlo simulation ({Math.round(progress)}%)
-                </p>
+                <div className="relative">
+                  <Progress
+                    value={displayProgress}
+                    className={cn(
+                      "transition-all duration-300",
+                      isSimulating &&
+                        "after:absolute after:inset-0 after:bg-gradient-to-r after:from-transparent after:via-white/20 after:to-transparent after:animate-shimmer",
+                    )}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-xs font-medium text-white mix-blend-difference">
+                      {Math.round(displayProgress)}%
+                    </span>
+                  </div>
+                </div>
+                <p className="text-center text-sm text-muted-foreground">Running Monte Carlo simulation</p>
               </div>
             )}
 
             {simulationResult && (
               <div className="grid gap-4 grid-cols-1 sm:grid-cols-3 md:grid-cols-1">
-                <Card>
+                <Card className={cn("transition-all duration-500", isSimulating ? "opacity-50" : "opacity-100")}>
                   <CardHeader className="p-4">
                     <CardTitle className="text-sm font-medium">Expected Revenue</CardTitle>
                   </CardHeader>
@@ -211,7 +272,9 @@ export function RevenueForecasting() {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card
+                  className={cn("transition-all duration-500 delay-100", isSimulating ? "opacity-50" : "opacity-100")}
+                >
                   <CardHeader className="p-4">
                     <CardTitle className="text-sm font-medium">Minimum Revenue</CardTitle>
                   </CardHeader>
@@ -227,7 +290,9 @@ export function RevenueForecasting() {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card
+                  className={cn("transition-all duration-500 delay-200", isSimulating ? "opacity-50" : "opacity-100")}
+                >
                   <CardHeader className="p-4">
                     <CardTitle className="text-sm font-medium">Maximum Revenue</CardTitle>
                   </CardHeader>
@@ -247,7 +312,7 @@ export function RevenueForecasting() {
           </div>
 
           {simulationResult && (
-            <div className="space-y-4">
+            <div className={cn("space-y-4 transition-all duration-500", isSimulating ? "opacity-50" : "opacity-100")}>
               <Card>
                 <CardHeader className="p-4">
                   <CardTitle className="text-sm font-medium">Revenue Distribution</CardTitle>
