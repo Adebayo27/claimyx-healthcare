@@ -14,9 +14,9 @@ import { RevenueDistributionChart } from "@/components/revenue-distribution-char
 export function RevenueForecasting() {
   const [claims, setClaims] = useState<Claim[]>([])
   const [probabilities, setProbabilities] = useState<PaymentProbabilities>({
-    Pending: 0.7,
-    Approved: 0.99,
-    Denied: 0.1,
+    Pending: 0.5,
+    Approved: 0.5,
+    Denied: 0.5,
   })
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)

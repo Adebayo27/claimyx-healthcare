@@ -14,47 +14,65 @@ export function runMonteCarloSimulationWithWorker(
   // Create a new worker with inline code
   const workerCode = `
     // Worker function to run Monte Carlo simulation
-    function runMonteCarloSimulation(claims, probabilities, iterations) {
-      // Initialize results array
-      const results = [];
-    
-      // Run simulation iterations
-      for (let i = 0; i < iterations; i++) {
-        let totalRevenue = 0;
-    
-        // For each claim, determine if it gets paid based on status and probability
-        for (const claim of claims) {
-          const probability = probabilities[claim.payment_status];
-          const isPaid = Math.random() < probability;
-    
-          if (isPaid) {
-            totalRevenue += claim.amount;
+    function monteCarloRevenueSimulation(claims, approvedProbability, denialProbability, pendingProbability, numTrials) {
+      // Validate probabilities are between 0 and 1
+      if (approvedProbability < 0 || approvedProbability > 1 ||
+          denialProbability < 0 || denialProbability > 1 ||
+          pendingProbability < 0 || pendingProbability > 1) {
+        throw new Error("Probabilities must be between 0 and 1");
+      }
+      
+      // Store all trial results for percentile calculations
+      const trialResults = [];
+      
+      let totalRevenue = 0;
+      for (let trial = 0; trial < numTrials; trial++) {
+        let trialRevenue = 0;
+        for (let claim of claims) {
+          let successProbability;
+          switch (claim.payment_status) {
+            case "Approved":
+              successProbability = approvedProbability;
+              break;
+            case "Denied":
+              successProbability = denialProbability;
+              break;
+            case "Pending":
+              successProbability = pendingProbability;
+              break;
+            default:
+              throw new Error("Invalid payment_status: " + claim.payment_status);
+          }
+          if (Math.random() < successProbability) {
+            trialRevenue += claim.amount;
           }
         }
-    
-        results.push(totalRevenue);
+        
+        // Store individual trial result
+        trialResults.push(trialRevenue);
+        totalRevenue += trialRevenue;
         
         // Send progress updates every 100 iterations
-        if (i % 100 === 0) {
-          self.postMessage({ type: "progress", progress: i / iterations });
+        if (trial % 100 === 0) {
+          self.postMessage({ type: "progress", progress: trial / numTrials });
         }
       }
-    
+      
       // Sort results for percentile calculations
-      results.sort((a, b) => a - b);
-    
+      trialResults.sort((a, b) => a - b);
+      
       // Calculate statistics
-      const expectedRevenue = results.reduce((sum, val) => sum + val, 0) / iterations;
-      const minRevenue = results[0];
-      const maxRevenue = results[results.length - 1];
-    
+      const expectedRevenue = totalRevenue / numTrials;
+      const minRevenue = trialResults[0];
+      const maxRevenue = trialResults[trialResults.length - 1];
+      
       // Calculate percentiles
-      const p10 = results[Math.floor(iterations * 0.1)];
-      const p25 = results[Math.floor(iterations * 0.25)];
-      const p50 = results[Math.floor(iterations * 0.5)];
-      const p75 = results[Math.floor(iterations * 0.75)];
-      const p90 = results[Math.floor(iterations * 0.9)];
-    
+      const p10 = trialResults[Math.floor(numTrials * 0.1)];
+      const p25 = trialResults[Math.floor(numTrials * 0.25)];
+      const p50 = trialResults[Math.floor(numTrials * 0.5)];
+      const p75 = trialResults[Math.floor(numTrials * 0.75)];
+      const p90 = trialResults[Math.floor(numTrials * 0.9)];
+      
       // Create distribution for histogram
       const numBuckets = 20;
       const bucketSize = (maxRevenue - minRevenue) / numBuckets;
@@ -62,16 +80,16 @@ export function runMonteCarloSimulationWithWorker(
         .fill(0)
         .map((_, i) => minRevenue + i * bucketSize);
       const distribution = Array(numBuckets).fill(0);
-    
-      for (const result of results) {
+      
+      for (const result of trialResults) {
         const bucketIndex = Math.min(Math.floor((result - minRevenue) / bucketSize), numBuckets - 1);
         distribution[bucketIndex]++;
       }
-    
+      
       // Normalize distribution
       const maxCount = Math.max(...distribution);
       const normalizedDistribution = distribution.map((count) => count / maxCount);
-    
+      
       return {
         expectedRevenue,
         minRevenue,
@@ -92,11 +110,21 @@ export function runMonteCarloSimulationWithWorker(
     self.onmessage = function(event) {
       const { claims, probabilities, iterations } = event.data;
       
-      // Run the simulation
-      const results = runMonteCarloSimulation(claims, probabilities, iterations);
-      
-      // Send the results back to the main thread
-      self.postMessage({ type: "complete", results });
+      try {
+        // Run the simulation using the monteCarloRevenueSimulation function
+        const results = monteCarloRevenueSimulation(
+          claims, 
+          probabilities.Approved, 
+          probabilities.Denied, 
+          probabilities.Pending, 
+          iterations
+        );
+        
+        // Send the results back to the main thread
+        self.postMessage({ type: "complete", results });
+      } catch (error) {
+        self.postMessage({ type: "error", error: error.message });
+      }
     };
   `
 
@@ -106,12 +134,17 @@ export function runMonteCarloSimulationWithWorker(
 
   // Set up message handling
   worker.onmessage = (event) => {
-    const { type, results, progress } = event.data
+    const { type, results, progress, error } = event.data
 
     if (type === "progress" && onProgress) {
       onProgress(progress)
     } else if (type === "complete" && onComplete) {
       onComplete(results)
+      // Clean up
+      worker.terminate()
+      URL.revokeObjectURL(workerUrl)
+    } else if (type === "error") {
+      console.error("Monte Carlo simulation error:", error)
       // Clean up
       worker.terminate()
       URL.revokeObjectURL(workerUrl)
@@ -130,46 +163,89 @@ export function runMonteCarloSimulationWithWorker(
   }
 }
 
-// Keep the original function for fallback or direct use
+// Keep the original function for fallback or direct use, but update to use the new algorithm
 export function runMonteCarloSimulation(
   claims: Claim[],
   probabilities: PaymentProbabilities,
   iterations = 2000,
 ): SimulationResult {
-  // Initialize results array
-  const results: number[] = []
-
-  // Run simulation iterations
-  for (let i = 0; i < iterations; i++) {
-    let totalRevenue = 0
-
-    // For each claim, determine if it gets paid based on status and probability
-    for (const claim of claims) {
-      const probability = probabilities[claim.payment_status]
-      const isPaid = Math.random() < probability
-
-      if (isPaid) {
-        totalRevenue += claim.amount
-      }
+ 
+  function monteCarloRevenueSimulation(
+    claims: Claim[],
+    approvedProbability: number,
+    denialProbability: number,
+    pendingProbability: number,
+    numTrials: number,
+  ) {
+    // Validate probabilities are between 0 and 1
+    if (
+      approvedProbability < 0 ||
+      approvedProbability > 1 ||
+      denialProbability < 0 ||
+      denialProbability > 1 ||
+      pendingProbability < 0 ||
+      pendingProbability > 1
+    ) {
+      throw new Error("Probabilities must be between 0 and 1")
     }
 
-    results.push(totalRevenue)
+    // Store all trial results for percentile calculations
+    const trialResults: number[] = []
+
+    let totalRevenue = 0
+    for (let trial = 0; trial < numTrials; trial++) {
+      let trialRevenue = 0
+      for (const claim of claims) {
+        let successProbability
+        switch (claim.payment_status) {
+          case "Approved":
+            successProbability = approvedProbability
+            break
+          case "Denied":
+            successProbability = denialProbability
+            break
+          case "Pending":
+            successProbability = pendingProbability
+            break
+          default:
+            throw new Error(`Invalid payment_status: ${claim.payment_status}`)
+        }
+        if (Math.random() < successProbability) {
+          trialRevenue += claim.amount
+        }
+      }
+
+      // Store individual trial result
+      trialResults.push(trialRevenue)
+      totalRevenue += trialRevenue
+    }
+
+    return trialResults
   }
 
+  // Run the simulation and get all trial results
+  const trialResults = monteCarloRevenueSimulation(
+    claims,
+    probabilities.Approved,
+    probabilities.Denied,
+    probabilities.Pending,
+    iterations,
+  )
+
   // Sort results for percentile calculations
-  results.sort((a, b) => a - b)
+  trialResults.sort((a, b) => a - b)
 
   // Calculate statistics
-  const expectedRevenue = results.reduce((sum, val) => sum + val, 0) / iterations
-  const minRevenue = results[0]
-  const maxRevenue = results[results.length - 1]
+  const expectedRevenue = trialResults.reduce((sum, val) => sum + val, 0) / iterations
+  const minRevenue = trialResults[0]
+  const maxRevenue = trialResults[trialResults.length - 1]
 
   // Calculate percentiles
-  const p10 = results[Math.floor(iterations * 0.1)]
-  const p25 = results[Math.floor(iterations * 0.25)]
-  const p50 = results[Math.floor(iterations * 0.5)]
-  const p75 = results[Math.floor(iterations * 0.75)]
-  const p90 = results[Math.floor(iterations * 0.9)]
+  const p10 = trialResults[Math.floor(iterations * 0.1)]
+  const p25 = trialResults[Math.floor(iterations * 0.25)]
+  const p50 = trialResults[Math.floor(iterations * 0.5)]
+  const p75 = trialResults[Math.floor(iterations * 0.75)]
+  const p90 = trialResults[Math.floor(iterations * 0.9)]
 
   // Create distribution for histogram
   const numBuckets = 20
@@ -179,7 +255,7 @@ export function runMonteCarloSimulation(
     .map((_, i) => minRevenue + i * bucketSize)
   const distribution = Array(numBuckets).fill(0)
 
-  for (const result of results) {
+  for (const result of trialResults) {
     const bucketIndex = Math.min(Math.floor((result - minRevenue) / bucketSize), numBuckets - 1)
     distribution[bucketIndex]++
   }
@@ -213,25 +289,64 @@ export function runMonteCarloSimulationInChunks(
   onProgress?: (progress: number) => void,
   onComplete?: (result: SimulationResult) => void,
 ) {
+  // Use the provided algorithm but run it in chunks
+  function monteCarloRevenueSimulationChunk(
+    claims: Claim[],
+    approvedProbability: number,
+    denialProbability: number,
+    pendingProbability: number,
+    startTrial: number,
+    endTrial: number,
+  ) {
+    const chunkResults: number[] = []
+
+    for (let trial = startTrial; trial < endTrial; trial++) {
+      let trialRevenue = 0
+      for (const claim of claims) {
+        let successProbability
+        switch (claim.payment_status) {
+          case "Approved":
+            successProbability = approvedProbability
+            break
+          case "Denied":
+            successProbability = denialProbability
+            break
+          case "Pending":
+            successProbability = pendingProbability
+            break
+          default:
+            throw new Error(`Invalid payment_status: ${claim.payment_status}`)
+        }
+        if (Math.random() < successProbability) {
+          trialRevenue += claim.amount
+        }
+      }
+      chunkResults.push(trialRevenue)
+    }
+
+    return chunkResults
+  }
+
   const results: number[] = []
   let currentIteration = 0
 
   function runChunk() {
     const chunkEnd = Math.min(currentIteration + chunkSize, iterations)
 
-    for (let i = currentIteration; i < chunkEnd; i++) {
-      let totalRevenue = 0
+    try {
+      const chunkResults = monteCarloRevenueSimulationChunk(
+        claims,
+        probabilities.Approved,
+        probabilities.Denied,
+        probabilities.Pending,
+        currentIteration,
+        chunkEnd,
+      )
 
-      for (const claim of claims) {
-        const probability = probabilities[claim.payment_status]
-        const isPaid = Math.random() < probability
-
-        if (isPaid) {
-          totalRevenue += claim.amount
-        }
-      }
-
-      results.push(totalRevenue)
+      results.push(...chunkResults)
+    } catch (error) {
+      console.error("Monte Carlo simulation error:", error)
+      return
     }
 
     currentIteration = chunkEnd
