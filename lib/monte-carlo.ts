@@ -163,7 +163,7 @@ export function runMonteCarloSimulationWithWorker(
   }
 }
 
-// Keep the original function for fallback or direct use, but update to use the new algorithm
+// Keep the original function for fallback or direct use
 export function runMonteCarloSimulation(
   claims: Claim[],
   probabilities: PaymentProbabilities,
